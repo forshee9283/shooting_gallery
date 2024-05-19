@@ -83,21 +83,55 @@ DItemRevisionGUID=
 GenerateClassCluster=0
 DocumentUniqueId=QZPYZOPB
 
-[Parameter1]
-Name=LeadEngineer
-Value=JCF
+[Document3]
+DocumentPath=2layer_Sophistry_Assembly.OutJob
+AnnotationEnabled=1
+AnnotateStartValue=1
+AnnotationIndexControlEnabled=0
+AnnotateSuffix=
+AnnotateScope=All
+AnnotateOrder=-1
+DoLibraryUpdate=1
+DoDatabaseUpdate=1
+ClassGenCCAutoEnabled=1
+ClassGenCCAutoRoomEnabled=0
+ClassGenNCAutoScope=None
+DItemRevisionGUID=
+GenerateClassCluster=0
+DocumentUniqueId=
 
-[Parameter2]
-Name=HardRev
+[Document4]
+DocumentPath=2layer_Sophistry_PCB.OutJob
+AnnotationEnabled=1
+AnnotateStartValue=1
+AnnotationIndexControlEnabled=0
+AnnotateSuffix=
+AnnotateScope=All
+AnnotateOrder=-1
+DoLibraryUpdate=1
+DoDatabaseUpdate=1
+ClassGenCCAutoEnabled=1
+ClassGenCCAutoRoomEnabled=0
+ClassGenNCAutoScope=None
+DItemRevisionGUID=
+GenerateClassCluster=0
+DocumentUniqueId=
+
+[Parameter1]
+Name=BOMRev
 Value=A
 
-[Parameter3]
+[Parameter2]
 Name=Codename
 Value=Shooting Gallery Score 7S Driver
 
-[Parameter4]
-Name=BOMRev
+[Parameter3]
+Name=HardRev
 Value=A
+
+[Parameter4]
+Name=LeadEngineer
+Value=JCF
 
 [Configuration1]
 Name=Sources
