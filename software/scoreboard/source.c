@@ -187,10 +187,11 @@ void boot_text() {
 }
 
 //Com Functions - These are based on midi
-void target_on(uint8_t channel, uint8_t note, u_int8_t data){
+void target_on(uint8_t channel, uint8_t note, u_int8_t color, u_int8_t pattern){
             uart_putc(uart0, 0x90 | channel); //Must be 0 - 15
             uart_putc(uart0, note); //Must be 0 - 127
-            uart_putc(uart0, data); //Must be 0 - 127
+            uart_putc(uart0, ((color<<4)|pattern)); //Must be 0 - 127
+            //printf("TX Note on Message: 0x%02X 0x%02X 0x%02X\n", (0x90 | channel), note, ((color<<4)|pattern));
 }
 void target_off(uint8_t channel, uint8_t note, u_int8_t data){
             uart_putc(uart0, 0x80 | channel); //Must be 0 - 15
@@ -256,10 +257,11 @@ int main() {
         gpio_put(TEST_LED_0, 1);
         if(!gpio_get(SW_1)){
             game_time = 1800;
-            target_on(1, 0, 0);
-            target_on(1, 1, 1);
-            target_on(1, 2, 2);
-            target_on(1, 3, 3);
+            target_on(1, 0, 0, 1);
+            target_on(1, 1, 0, 2);
+            // target_on(1, 2, 2, 2);
+            // target_on(1, 3, 3, 3);
+            //printf("Button Press\n");
         }
 
         score[0]++;

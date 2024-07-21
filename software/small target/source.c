@@ -46,6 +46,8 @@ uint32_t led_colors[STRING_COUNT][LED_COUNT] = {0};
 uint32_t current_pat[TARGETS_PER_STRING*STRING_COUNT];
 uint32_t current_color[TARGETS_PER_STRING*STRING_COUNT];
 uint32_t preset_colors[16] = {PLAYER0_COLOR, PLAYER1_COLOR, PLAYER2_COLOR, PLAYER3_COLOR};
+uint8_t uart_channal;
+uint8_t program_numb =0;
 
 volatile uint32_t time_click = 0;
 uint32_t fade[35] = {
@@ -94,6 +96,13 @@ void pattern_solid (uint32_t *data, uint32_t t, uint32_t color){
 void pattern_rotate (uint32_t *data, uint32_t t, uint32_t color){
     for (int i = 0; i < LEDS_PER_TARGET; i++)
     {
+        data[i] = set_brightness(color, fade[(t - i) % LEDS_PER_TARGET]);
+    }
+}
+
+void pattern_rotate_ccw (uint32_t *data, uint32_t t, uint32_t color){
+    for (int i = 0; i < LEDS_PER_TARGET; i++)
+    {
         data[i] = set_brightness(color, fade[(t + i) % LEDS_PER_TARGET]);
     }
 }
@@ -117,10 +126,12 @@ const struct {
     pattern pat;
     const char *name;
 } pattern_table[] = {
+        {pattern_off,  "Off"},
         {pattern_solid,  "Solid"},
         {pattern_rotate,  "Rotate"},
+        {pattern_rotate_ccw,  "Counter Rotate"},
         {pattern_blamo,  "Blamo!"},
-        {pattern_off,  "Off"},
+        
 };
 
 
@@ -153,6 +164,7 @@ void on_uart_rx() {
 
     while (uart_is_readable(uart0)) {
         uint8_t byte = uart_getc(uart0);
+        //printf("RX byte: 0x%02X index %d\n", byte, uart_data_index);
 
         // MIDI messages start with a status byte (0x80 to 0xFF)
         if (byte & 0x80) {
@@ -163,13 +175,16 @@ void on_uart_rx() {
 
         // Check if we've received a complete MIDI message
         if (uart_data_index == UART_MSG_SIZE) {
-            // Store the message in the ring buffer if there is space
-            if (buffer_count < BUFFER_CAPACITY) {
-                for (int i = 0; i < UART_MSG_SIZE; i++) {
-                    ring_buffer[write_index][i] = uart_data_buffer[i];
+            // Validate that the first byte is a status byte
+            if (uart_data_buffer[0] & 0x80) {
+                // Store the message in the ring buffer if there is space
+                if (buffer_count < BUFFER_CAPACITY) {
+                    for (int i = 0; i < UART_MSG_SIZE; i++) {
+                        ring_buffer[write_index][i] = uart_data_buffer[i];
+                    }
+                    write_index = (write_index + 1) % BUFFER_CAPACITY;
+                    buffer_count++;
                 }
-                write_index = (write_index + 1) % BUFFER_CAPACITY;
-                buffer_count++;
             }
             uart_data_index = 0;  // Reset buffer index for next message
         }
@@ -177,10 +192,39 @@ void on_uart_rx() {
 }
 
 void process_uart_data(uint8_t *data) {
-    uint8_t command = data[0];
+    uint8_t command = data[0]>>4;
     uint8_t data1 = data[1];
     uint8_t data2 = data[2];
-    printf("MIDI Message: 0x%02X 0x%02X 0x%02X\n", command, data1, data2);
+    //printf("MIDI Message: 0x%02X 0x%02X 0x%02X\n", data[0], data1, data2);
+    switch (command)
+    {
+    case 0x08://Note off
+        current_color[data1] = 0;
+        current_pat[data1] = data2&0x00FF;
+        break;
+    case 0x09://Note on
+        current_color[data1] = preset_colors[data2>>4];
+        current_pat[data1] = data2&0x00FF;
+        printf("RX on: 0x%02X note 0x%02X color 0x%02X pat 0x%02X\n", command, data1, data2>>4, data2&0x00FF);
+        break;
+    case 0x0A://Polyphonic Aftertouch
+        /* code */
+        break;
+    case 0x0B://Control Change
+        /* need to forward target num and respond with num of targets */
+        break;
+    case 0x0C://Program Change
+        program_numb = data1;
+        break;
+    case 0x0D://Channel Aftertouch
+        /* code */
+        break;
+    case 0x0E://Pitch Wheel
+        /* code */
+        break;
+    default:
+        break;
+    }
 }
 
 
@@ -220,14 +264,12 @@ int main() {
     // Initialize the timer with the given period and enable interrupts
     add_repeating_timer_ms(-20, timer_callback, NULL, &timer); //-20 for 50 fps
 
-    sleep_ms(500);
-    current_pat[0] = 1;
-    current_color[0] = preset_colors[0];
-    current_pat[1] = 1;
+    current_pat[0] = 2;
+    current_color[0] = preset_colors[1];
+    current_pat[1] = 4;
     current_color[1] = preset_colors[1]; 
-    current_pat[2] = 2;
-    current_color[2] = preset_colors[3];
-    printf("DATA: 0x%02X 0x%02X 0x%02X\n", current_pat[0], current_pat[1], current_color[1]);     
+    current_pat[2] = 3;
+    current_color[2] = preset_colors[3];   
 
     while(true){
         gpio_put(TEST_LED_0, 1);
@@ -244,5 +286,6 @@ int main() {
             }
         update_flag = false;
         }
+        //printf("Main loop!\n");
     }
 }
