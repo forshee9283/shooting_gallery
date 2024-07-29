@@ -32,9 +32,9 @@ set(CMAKE_CXX_STANDARD 17)
 # Initialise the SDK
 pico_sdk_init()
  
-# Enable USB, UART output
+# Enable USB, disable UART output
 pico_enable_stdio_usb(${PROJECT_NAME}  1)
-#pico_enable_stdio_uart(${PROJECT_NAME}  0)
+pico_enable_stdio_uart(${PROJECT_NAME}  0)
 
 # Enable extra outputs (SWD?)
 pico_add_extra_outputs(${PROJECT_NAME} )

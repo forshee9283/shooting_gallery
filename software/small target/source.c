@@ -27,6 +27,7 @@
 #define UART0_RX 1
 
 #define PLAYER0_COLOR 0xFF000000
+//#define PLAYER1_COLOR 0xFF000000
 #define PLAYER1_COLOR 0x00FF0000
 #define PLAYER2_COLOR 0x0000FF00
 #define PLAYER3_COLOR 0x60900000
@@ -38,7 +39,7 @@
 #define STRING_COUNT 2
 
 #define UART_MSG_SIZE 3
-#define BUFFER_CAPACITY 16 
+#define BUFFER_CAPACITY 32 
 
 bool update_flag = false;
 uint dma_chan[STRING_COUNT];
@@ -164,7 +165,7 @@ void on_uart_rx() {
 
     while (uart_is_readable(uart0)) {
         uint8_t byte = uart_getc(uart0);
-        //printf("RX byte: 0x%02X index %d\n", byte, uart_data_index);
+        printf("RX byte: 0x%02X index %d\n", byte, uart_data_index);
 
         // MIDI messages start with a status byte (0x80 to 0xFF)
         if (byte & 0x80) {
@@ -200,12 +201,12 @@ void process_uart_data(uint8_t *data) {
     {
     case 0x08://Note off
         current_color[data1] = 0;
-        current_pat[data1] = data2&0x00FF;
+        current_pat[data1] = data2&0x0F;
         break;
     case 0x09://Note on
         current_color[data1] = preset_colors[data2>>4];
-        current_pat[data1] = data2&0x00FF;
-        printf("RX on: 0x%02X note 0x%02X color 0x%02X pat 0x%02X\n", command, data1, data2>>4, data2&0x00FF);
+        current_pat[data1] = data2&0x0F;
+        printf("RX on: 0x%02X note 0x%02X color 0x%08X pat 0x%02X\n", command, data1, current_color[data1], current_pat[data1]);
         break;
     case 0x0A://Polyphonic Aftertouch
         /* code */
@@ -269,7 +270,9 @@ int main() {
     current_pat[1] = 4;
     current_color[1] = preset_colors[1]; 
     current_pat[2] = 3;
-    current_color[2] = preset_colors[3];   
+    current_color[2] = preset_colors[3];
+    current_pat[3] = 2;
+    current_color[3] = preset_colors[2];   
 
     while(true){
         gpio_put(TEST_LED_0, 1);
@@ -283,8 +286,10 @@ int main() {
         if (update_flag) {
             for (int i = 0; i < TARGETS_TOTAL; i++) {
                 pattern_table[current_pat[i]].pat(&led_colors[i / TARGETS_PER_STRING][(i % TARGETS_PER_STRING) * LEDS_PER_TARGET], time_click, current_color[i]);
+                //pattern_table[current_pat[i]].pat(&led_colors[i / TARGETS_PER_STRING][(i % TARGETS_PER_STRING) * LEDS_PER_TARGET], time_click, 0xFF000000);
             }
         update_flag = false;
+        //printf("update flag 0!\n");
         }
         //printf("Main loop!\n");
     }
