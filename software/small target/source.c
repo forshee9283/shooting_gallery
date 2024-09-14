@@ -46,10 +46,11 @@
 bool update_flag = false;
 uint dma_chan[STRING_COUNT];
 uint32_t led_colors[STRING_COUNT][LED_COUNT] = {0};
-uint32_t current_pat[TARGETS_PER_STRING*STRING_COUNT];
-uint32_t current_color[TARGETS_PER_STRING*STRING_COUNT];
+uint32_t current_pat[TARGETS_PER_STRING*STRING_COUNT] = {0};
+uint32_t current_color[TARGETS_PER_STRING*STRING_COUNT]; //I think this should be eliminated
+uint32_t current_player[TARGETS_PER_STRING*STRING_COUNT];
 uint32_t current_time[TARGETS_PER_STRING*STRING_COUNT] = {0};
-uint32_t preset_colors[16] = {PLAYER0_COLOR, PLAYER1_COLOR, PLAYER2_COLOR, PLAYER3_COLOR};
+uint32_t preset_colors[16] = {PLAYER0_COLOR, PLAYER1_COLOR, PLAYER2_COLOR, PLAYER3_COLOR, 0, 0x88888800};
 uint8_t uart_channal;
 uint8_t program_numb =0;
 
@@ -62,6 +63,16 @@ uint32_t fade[35] = {
     48, 64, 80, 96, 112,
     128, 144, 160, 176, 192,
     208, 224, 240, 256, 256
+};
+
+uint32_t blam[35] = {
+    256, 256, 64, 8, 4, 
+    2, 1, 0, 0, 0, 
+    0, 0, 0, 0, 0, 
+    0, 0, 0, 0, 0, 
+    0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0
 };
 
 bool timer_callback (struct repeating_timer *t) {
@@ -93,15 +104,16 @@ uint32_t set_brightness(u_int32_t color, uint32_t brightness){//Unity brightness
 void pattern_solid (uint32_t *data, uint32_t target_num){
     for (int i = 0; i < LEDS_PER_TARGET; i++)
     {
-        data[i]=current_color[target_num];
+        //data[i]=current_color[target_num];
+        data[i]=preset_colors[current_player[target_num]];
     }
 }
 
 void pattern_rotate (uint32_t *data, uint32_t target_num){
     for (int i = 0; i < LEDS_PER_TARGET; i++)
     {
-        //data[i] = set_brightness(color, fade[(t - i) % LEDS_PER_TARGET]);
-        data[i] = set_brightness(current_color[target_num], fade[(current_time[target_num] + LEDS_PER_TARGET - i)% LEDS_PER_TARGET]);
+        //data[i] = set_brightness(current_color[target_num], fade[(current_time[target_num] + LEDS_PER_TARGET - i)% LEDS_PER_TARGET]);
+        data[i] = set_brightness(preset_colors[current_player[target_num]], fade[(current_time[target_num] + LEDS_PER_TARGET - i)% LEDS_PER_TARGET]);
     }
     (current_time[target_num] >= LEDS_PER_TARGET) ? current_time[target_num] = 0 : current_time[target_num]++;
 }
@@ -109,8 +121,8 @@ void pattern_rotate (uint32_t *data, uint32_t target_num){
 void pattern_rotate_ccw (uint32_t *data, uint32_t target_num){
     for (int i = 0; i < LEDS_PER_TARGET; i++)
     {
-        //data[i] = set_brightness(color, fade[(t + i) % LEDS_PER_TARGET]);
-        data[i] = set_brightness(current_color[target_num], fade[(current_time[target_num]+i) % LEDS_PER_TARGET]);
+        //data[i] = set_brightness(current_color[target_num], fade[(current_time[target_num]+i) % LEDS_PER_TARGET]);
+        data[i] = set_brightness(preset_colors[current_player[target_num]], fade[(current_time[target_num]+i) % LEDS_PER_TARGET]);
     }
     (current_time[target_num] >= LEDS_PER_TARGET) ? current_time[target_num] = 0 : current_time[target_num]++;
 }
@@ -118,10 +130,10 @@ void pattern_rotate_ccw (uint32_t *data, uint32_t target_num){
 void pattern_blamo (uint32_t *data, uint32_t target_num){ //needs more blam
     for (int i = 0; i < LEDS_PER_TARGET; i++)
     {
-        //data[i] = set_brightness(color, fade[(t) % LEDS_PER_TARGET]);
-        data[i] = set_brightness(current_color[target_num], fade[current_time[target_num]]);  
+        //data[i] = set_brightness(current_color[target_num], blam[current_time[target_num]]);
+        data[i] = set_brightness(preset_colors[current_player[target_num]], blam[current_time[target_num]]);   
     }
-    (current_time[target_num] >= LEDS_PER_TARGET) ? current_time[target_num] = 0 : current_time[target_num]++;
+    (current_time[target_num] >= LEDS_PER_TARGET) ? current_pat[target_num] = 0 : current_time[target_num]++;
 }
 
 void pattern_off (uint32_t *data, uint32_t target_num){
@@ -132,16 +144,16 @@ void pattern_off (uint32_t *data, uint32_t target_num){
     }
 }
 typedef void (*pattern)(uint32_t *data, uint32_t target_num);
-//typedef void (*pattern)(uint32_t *data, uint32_t t, uint32_t color);
 const struct {
     pattern pat;
     const char *name;
 } pattern_table[] = {
         {pattern_off,  "Off"},
+        {pattern_blamo,  "Blamo!"},
         {pattern_solid,  "Solid"},
         {pattern_rotate,  "Rotate"},
         {pattern_rotate_ccw,  "Counter Rotate"},
-        {pattern_blamo,  "Blamo!"},
+        
         
 };
 
@@ -167,6 +179,13 @@ uint8_t ring_buffer[BUFFER_CAPACITY][UART_MSG_SIZE];
 volatile int write_index = 0;
 volatile int read_index = 0;
 volatile int buffer_count = 0;
+
+void target_hit(uint8_t channel, uint8_t note, u_int8_t player, u_int8_t time){
+            uart_putc(uart0, 0x90 | channel); //Must be 0 - 15
+            uart_putc(uart0, note); //Must be 0 - 127
+            uart_putc(uart0, ((player<<4)|time)); //Must be 0 - 127
+            printf("Target Hit: 0x%02X 0x%02X 0x%02X\n", (0x90 | channel), note, ((player<<4)|time));
+}
 
 // Function to handle UART interrupts. Currently hardcoded to uart0!
 void on_uart_rx() {
@@ -210,13 +229,15 @@ void process_uart_data(uint8_t *data) {
     switch (command)
     {
     case 0x08://Note off
-        current_color[data1] = 0;
-        current_pat[data1] = data2&0x0F;
+        //current_color[data1] = 0;
+        current_pat[data1] = 0;
+        current_time[data1] = 0;
         break;
     case 0x09://Note on
-        current_color[data1] = preset_colors[data2>>4];
+        //current_color[data1] = preset_colors[data2>>4];
+        current_player[data1] = data2>>4;
         current_pat[data1] = data2&0x0F;
-        printf("RX on: 0x%02X note 0x%02X color 0x%08X pat 0x%02X\n", command, data1, current_color[data1], current_pat[data1]);
+        printf("Target on: 0x%02X note 0x%02X player 0x%08X pat 0x%02X\n", command, data1, current_player[data1], current_pat[data1]);
         break;
     case 0x0A://Polyphonic Aftertouch
         /* code */
@@ -242,6 +263,16 @@ void process_uart_data(uint8_t *data) {
     }
 }
 
+void gpio_callback(uint gpio, uint32_t events){
+    if(gpio == PIEZO1){
+        if(current_pat[0]>1){
+            target_hit(0,0,current_player[0],current_time[0]);
+            current_time[0] = 0;
+            current_pat[0] = 1;
+        }
+        
+    }
+}
 
 int main() {
     stdio_init_all();
@@ -251,10 +282,12 @@ int main() {
     gpio_set_dir(TEST_LED_1, true);
     gpio_init(LED_PIN);
     gpio_set_dir(LED_PIN, true);
+
     gpio_init(PIEZO1);
     gpio_set_dir(PIEZO1, false);
     gpio_init(PIEZO2);
     gpio_set_dir(PIEZO2, false);
+    gpio_set_irq_enabled_with_callback(PIEZO1, GPIO_IRQ_EDGE_RISE, true, &gpio_callback);
 
     //Initalize UARTs
     uart_init(uart0, BAUD_RATE);
@@ -281,16 +314,7 @@ int main() {
         dma_channel_start(dma_chan[i]);
     }
     // Initialize the timer with the given period and enable interrupts
-    add_repeating_timer_ms(-20, timer_callback, NULL, &timer); //-20 for 50 fps
-
-    current_pat[0] = 2;
-    current_color[0] = preset_colors[1];
-    current_pat[1] = 4;
-    current_color[1] = preset_colors[1]; 
-    current_pat[2] = 3;
-    current_color[2] = preset_colors[3];
-    current_pat[3] = 2;
-    current_color[3] = preset_colors[2];   
+    add_repeating_timer_ms(-20, timer_callback, NULL, &timer); //-20 for 50 fps  
 
     while(true){
         gpio_put(TEST_LED_0, gpio_get(PIEZO1));
