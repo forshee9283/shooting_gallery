@@ -1,5 +1,6 @@
 # What CMake to start at
 cmake_minimum_required(VERSION 3.12)
+
  
 # Include the subsidiary .cmake file to get the SDK
 # include(pico_sdk_import.cmake)
@@ -11,6 +12,7 @@ project(scoreboard C CXX ASM)
 
 # Link the Project to a source file (step 4.6)
 add_executable(${PROJECT_NAME} source.c)
+
 
 
 # Create C header file with the name <pio program>.pio.h

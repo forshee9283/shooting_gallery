@@ -28,6 +28,8 @@
 #define UART0_RX 1
 #define UART1_TX 4
 #define UART1_RX 5
+#define UART_MSG_SIZE 3
+#define BUFFER_CAPACITY 32
 
 #define MAX_PLAYERS 4 //Set for number of player scoreboards in the chain
 #define DISPLAY_UNITS MAX_PLAYERS + 1 //Total number of displays with clock
@@ -37,6 +39,8 @@ volatile bool tiger_1;
 volatile int led_on_timer =0;
 volatile int piezo_trig_cnt =0;
 volatile uint game_time=0;
+volatile uint num_targets;
+volatile uint game_mode=0;
 
 uint8_t segments[10] = {
     0b00111111, // 0
@@ -187,6 +191,11 @@ void boot_text() {
 }
 
 //Com Functions - These are based on midi
+void target_init(uint8_t channel){
+            uart_putc(uart0, 0xB0 | channel); //Must be 0 - 15
+            uart_putc(uart0, 0); //Must be 0 - 127
+            uart_putc(uart0, 0); //Must be 0 - 127
+}
 void target_on(uint8_t channel, uint8_t note, u_int8_t color, u_int8_t pattern){
             uart_putc(uart0, 0x90 | channel); //Must be 0 - 15
             uart_putc(uart0, note); //Must be 0 - 127
@@ -197,6 +206,102 @@ void target_off(uint8_t channel, uint8_t note, u_int8_t data){
             uart_putc(uart0, 0x80 | channel); //Must be 0 - 15
             uart_putc(uart0, note); //Must be 0 - 127
             uart_putc(uart0, data); //Must be 0 - 127
+}
+
+uint8_t ring_buffer[BUFFER_CAPACITY][UART_MSG_SIZE];
+volatile int write_index = 0;
+volatile int read_index = 0;
+volatile int buffer_count = 0;
+
+// Function to handle UART interrupts. Currently hardcoded to uart0!
+void on_uart_rx() {
+    static uint8_t uart_data_buffer[UART_MSG_SIZE];
+    static int uart_data_index = 0;
+
+    while (uart_is_readable(uart0)) {
+        uint8_t byte = uart_getc(uart0);
+        //printf("Scoreboard RX byte: 0x%02X index %d\n", byte, uart_data_index);
+        // MIDI messages start with a status byte (0x80 to 0xFF)
+        if (byte & 0x80) {
+            uart_data_index = 0;  // Reset buffer index if we get a new status byte
+        }
+
+        uart_data_buffer[uart_data_index++] = byte;
+
+        // Check if we've received a complete MIDI message
+        if (uart_data_index == UART_MSG_SIZE) {
+            // Validate that the first byte is a status byte
+            if (uart_data_buffer[0] & 0x80) {
+                // Store the message in the ring buffer if there is space
+                if (buffer_count < BUFFER_CAPACITY) {
+                    for (int i = 0; i < UART_MSG_SIZE; i++) {
+                        ring_buffer[write_index][i] = uart_data_buffer[i];
+                    }
+                    write_index = (write_index + 1) % BUFFER_CAPACITY;
+                    buffer_count++;
+                }
+            }
+            uart_data_index = 0;  // Reset buffer index for next message
+        }
+    }
+}
+
+void process_uart_data(uint8_t *data) {
+    uint8_t command = data[0]>>4;
+    uint8_t data1 = data[1];
+    uint8_t data2 = data[2];
+    //printf("MIDI Message: 0x%02X 0x%02X 0x%02X\n", data[0], data1, data2);
+    switch (command)
+    {
+    case 0x08://Note off
+        break;
+    case 0x09://Note on Hit Recived
+        // current_color[data1] = preset_colors[data2>>4];
+        // current_pat[data1] = data2&0x0F;
+        printf("RX on: Channel:%d Target:%d Player:%d Points:%d data2:0x%02X\n", data[0]&0xF, data1, data2>>5, data2&0x1F, data2);
+        break;
+    case 0x0A://Polyphonic Aftertouch
+        /* code */
+        break;
+    case 0x0B://Control Change
+        num_targets = num_targets>data[2] ? num_targets : data[2]; 
+        printf("Scoreboard - Number of targets: %d\n", num_targets);
+        break;
+    case 0x0C://Program Change
+        /* code */
+        break;
+    case 0x0D://Channel Aftertouch
+        /* code */
+        break;
+    case 0x0E://Pitch Wheel
+        /* code */
+        break;
+    default:
+        break;
+    }
+}
+
+void target_enum() { //hardcoded for uart0
+    uart_putc(uart0, 0xB0);
+    uart_putc(uart0, 0); 
+    uart_putc(uart0, 0); 
+    sleep_ms(300);//wait for responce
+}
+
+void setup_mode(){
+    if(!gpio_get(SW_1)){
+        game_time = 1800;
+        target_on(1, 0, rand()%4, (rand()%3)+2);
+        target_on(1, 1, rand()%4, (rand()%3)+2);
+        target_on(1, 2, rand()%4, (rand()%3)+2);
+        target_on(1, 3, rand()%4, (rand()%3)+2);
+        //printf("Button Press\n");
+        }
+    score[0]++;
+    score[1]+=3;
+    score[2]+=5;
+    score[3]=num_targets;
+    sleep_ms(300);
 }
 
 int main() {
@@ -220,7 +325,12 @@ int main() {
     // Initialize RS232
     uart_init(uart0, BAUD_RATE);
     gpio_set_function(UART0_TX, GPIO_FUNC_UART);
-    gpio_set_function(UART0_RX, GPIO_FUNC_UART);   
+    gpio_set_function(UART0_RX, GPIO_FUNC_UART);
+
+    //Enable UART interrupt
+    uart_set_irq_enables(uart0, true, false);
+    irq_set_exclusive_handler(UART0_IRQ, on_uart_rx);
+    irq_set_enabled(UART0_IRQ, true);   
 
     //Seven segmet outputs
     gpio_init(SS_LAT);
@@ -229,7 +339,7 @@ int main() {
     gpio_set_dir(SS_BLANK, true);
 
     //Set Brightness
-    uint8_t ss_currents[] = {254, 238, 0, 255, 255}; //Use this to fine tune brightness of the displays end of chain first
+    uint8_t ss_currents[] = {255, 238, 0, 255, 255}; //Use this to fine tune brightness of the displays end of chain first
     set_tlc5916_current(ss_currents, DISPLAY_UNITS);
 
     // Initialize SPI
@@ -252,23 +362,43 @@ int main() {
     // Set up interrupt for falling edge on button pin
     //gpio_set_irq_enabled_with_callback(SW_1, GPIO_IRQ_EDGE_RISE, true, &button_callback);
 
+    sleep_ms(300);//debug sleep
+    target_enum();
+
     while(true){
         gpio_put(LED_PIN, gpio_get(SW_1));
         gpio_put(TEST_LED_0, 1);
-        if(!gpio_get(SW_1)){
-            game_time = 1800;
-            target_on(1, 0, score[1]%4, score[0]%4);
-            //target_on(1, 1, 0, (score[0]+1)%4);
-            target_on(1, 1, (score[1]+1)%4, (score[0]+1)%4);
-            // target_on(1, 2, 2, 2);
-            // target_on(1, 3, 3, 3);
-            //printf("Button Press\n");
+        if (buffer_count > 0) {
+            process_uart_data(ring_buffer[read_index]);
+            read_index = (read_index + 1) % BUFFER_CAPACITY;
+            buffer_count--;
         }
 
-        score[0]++;
-        score[1]+=3;
-        score[2]+=5;
-        sleep_ms(300);
+        switch (game_mode)
+        {
+        case 0://Setup
+            setup_mode();
+            break;
+
+        case 1://Timer mode
+            /* code */
+            break;
+        
+        case 2://Quick mode
+            /* code */
+            break;
+        
+        case 3://Blackout mode
+            /* code */
+            break;
+        
+        case 4://Attack mode
+            /* code */
+            break;
+
+        default:
+            break;
+        }
     }
     
 }

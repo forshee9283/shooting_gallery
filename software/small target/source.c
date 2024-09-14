@@ -180,11 +180,11 @@ volatile int write_index = 0;
 volatile int read_index = 0;
 volatile int buffer_count = 0;
 
-void target_hit(uint8_t channel, uint8_t note, u_int8_t player, u_int8_t time){
+void target_hit(uint8_t channel, uint8_t note, u_int8_t player, u_int8_t score){ //Player 3 bits, score 5!
             uart_putc(uart0, 0x90 | channel); //Must be 0 - 15
             uart_putc(uart0, note); //Must be 0 - 127
-            uart_putc(uart0, ((player<<4)|time)); //Must be 0 - 127
-            printf("Target Hit: 0x%02X 0x%02X 0x%02X\n", (0x90 | channel), note, ((player<<4)|time));
+            uart_putc(uart0, ((player<<5)|(score&0x1F))); //Must be 0 - 127
+            printf("Target Hit: 0x%02X 0x%02X 0x%02X -score 0x%02X\n", (0x90 | channel), note, ((player<<5)|(score&0x1F)), score);
 }
 
 // Function to handle UART interrupts. Currently hardcoded to uart0!
@@ -267,6 +267,7 @@ void gpio_callback(uint gpio, uint32_t events){
     if(gpio == PIEZO1){
         if(current_pat[0]>1){
             target_hit(0,0,current_player[0],current_time[0]);
+            printf("Target - Player Hit: %d\n", current_player[0]);
             current_time[0] = 0;
             current_pat[0] = 1;
         }
