@@ -9,12 +9,14 @@
 #include "hardware/dma.h"
 #include "hardware/irq.h"
 #include "hardware/spi.h"
+#include "ascii_to_seg.h"
 
 #define LED_PIN PICO_DEFAULT_LED_PIN
 #define TEST_LED_0 2
 #define SW_1 28
 #define SW_2 27
 #define SW_3 26
+#define DEBOUNCE_DELAY_MS 5
 
 #define SS_SPI spi0
 #define SS_SPI_RATE 1000000 //1MHz
@@ -35,12 +37,13 @@
 #define DISPLAY_UNITS MAX_PLAYERS + 1 //Total number of displays with clock
 volatile int score[MAX_PLAYERS] = {0};
 
-volatile bool tiger_1;
-volatile int led_on_timer =0;
-volatile int piezo_trig_cnt =0;
-volatile uint game_time=0;
+volatile bool sw_flag[3] = {0};
+volatile int led_on_timer = 0;
+volatile int piezo_trig_cnt = 0;
+volatile uint game_time = 0;
 volatile uint num_targets;
-volatile uint game_mode=0;
+volatile uint game_mode = 0;
+uint current_players = MAX_PLAYERS;
 
 uint8_t segments[10] = {
     0b00111111, // 0
@@ -80,17 +83,47 @@ uint8_t boot_message[24] = {
     0b01111001, //E
     0b00000000  //space
     };
+char start_message[] = "COOPEr'S SUPER bULLSEyE";  
 
+absolute_time_t last_pressed_time[3] = {0};
 
-int ss_int_write(int num){
+bool is_debounce(uint sw_index) { //Hardware debounce was nessisary in testing
+    absolute_time_t now = get_absolute_time();
+    int64_t time_diff = absolute_time_diff_us(last_pressed_time[sw_index], now);
+    if (time_diff < (DEBOUNCE_DELAY_MS * 1000)) {
+        return true;  // Ignore this event
+    }    
+    last_pressed_time[sw_index] = now; // Update the last press time
+    return false;  // Process this event
+}
+
+void ss_int_write(int num){
     uint8_t data_to_send [4];
     data_to_send [3] = segments[num % 10];
     data_to_send [2] = segments[(num /10) % 10];
     data_to_send [1] = segments[(num /100) % 10];
     data_to_send [0] = segments[(num /1000) % 10];
-    spi_write_blocking(SS_SPI, &data_to_send[0], 4); // Send one byte
+    spi_write_blocking(SS_SPI, &data_to_send[0], 4);
 }
-int ss_time_write(int num){
+
+void ss_int_blank_write(int num){
+    uint8_t data_to_send [4] = {0};
+    if(num){
+        data_to_send [3] = segments[num % 10];
+    }
+    if(num>=10){
+        data_to_send [2] = segments[(num /10) % 10];
+    }
+    if(num>=10){
+        data_to_send [1] = segments[(num /100) % 10];
+    }
+    if(num>=10){
+        data_to_send [0] = segments[(num /1000) % 10];
+    }
+    spi_write_blocking(SS_SPI, &data_to_send[0], 4);
+}
+
+void ss_time_write(int num){
     uint8_t data_to_send [4];
     uint8_t blink = ((num % 10)>4) ? 0x00 : 0x80; //blink ":" between min and sec
     int seconds = (num/10)%60;
@@ -98,26 +131,55 @@ int ss_time_write(int num){
     data_to_send [2] = segments[(seconds) % 10] | 0x80;
     data_to_send [1] = segments[(seconds /10) % 10]| blink;
     data_to_send [0] = segments[(num /600) % 10] | blink;
-    spi_write_blocking(SS_SPI, &data_to_send[0], 4); // Send one byte
+    spi_write_blocking(SS_SPI, &data_to_send[0], 4);
+}
+
+void ss_string_write(const char* input_str){
+    uint8_t data_to_send [4];
+        for (int i = 0; i < 4; i++) {
+        if (input_str[i] != '\0') {  // Check if the string still has characters
+            data_to_send[i] = ASCII_TO_SEG[input_str[i] - 32];  // Convert character
+        } else {
+            data_to_send[i] = 0;  // Handle shorter strings by padding with 0
+        }
+    }
+    spi_write_blocking(SS_SPI, &data_to_send[0], 4); 
 }
 
 bool timer_callback (struct repeating_timer *t) {
     gpio_put(SS_LAT, 0);
-    if (game_time != 0)
+    switch (game_mode)
     {
-        game_time--;
-    }
-    ss_time_write(game_time);
-    for (size_t i = 0; i < MAX_PLAYERS; i++)
-        {
+    case 0: //setup
+        // if (game_time != 0){
+        //     game_time--;
+        // }
+        // ss_time_write(game_time);
+        // for (size_t i = 0; i < MAX_PLAYERS; i++){
+        //     ss_int_write(score[i]);
+        // }
+        ss_string_write(&start_message[0]);
+        ss_string_write("PLyr");
+        ss_int_blank_write(current_players);
+        ss_string_write("TyPE");
+        ss_string_write("DAD ");
+        break;
+    case 1:
+        if (game_time != 0){
+            game_time--;
+        }
+        ss_time_write(game_time);
+        for (size_t i = 0; i < MAX_PLAYERS; i++){
             ss_int_write(score[i]);
         }
+        break;
+    default:
+        break;
+    }
     gpio_put(SS_LAT, 1);
     return true;
 }
 
-// void button_callback(){
-// }
 
 
 void set_tlc5916_current(uint8_t* currents, int groups) {
@@ -289,19 +351,45 @@ void target_enum() { //hardcoded for uart0
 }
 
 void setup_mode(){
-    if(!gpio_get(SW_1)){
+    if(sw_flag[0]){
         game_time = 1800;
-        target_on(1, 0, rand()%4, (rand()%3)+2);
-        target_on(1, 1, rand()%4, (rand()%3)+2);
-        target_on(1, 2, rand()%4, (rand()%3)+2);
-        target_on(1, 3, rand()%4, (rand()%3)+2);
-        //printf("Button Press\n");
+        current_players = (current_players % MAX_PLAYERS) +1;
+        sw_flag[0] = 0;
         }
+    if(sw_flag[1]){
+        game_time = 1800;
+        for (size_t i = 0; i < num_targets; i++)
+        {
+            target_on(1, i, rand()%4, (rand()%3)+2);
+        }
+        
+        // target_on(1, 0, rand()%4, (rand()%3)+2);
+        // target_on(1, 1, rand()%4, (rand()%3)+2);
+        // target_on(1, 2, rand()%4, (rand()%3)+2);
+        // target_on(1, 3, rand()%4, (rand()%3)+2);
+        //printf("Button Press\n");
+        sw_flag[1] = 0;
+    }
+    if(sw_flag[2]){
+        sw_flag[2] = 0;
+    }
     score[0]++;
     score[1]+=3;
     score[2]+=5;
     score[3]=num_targets;
     sleep_ms(300);
+}
+
+void gpio_callback(uint gpio, uint32_t events){
+    if (gpio == SW_1 && !is_debounce(0)) {
+        sw_flag[0] = 1;
+    }
+    if (gpio == SW_2 && !is_debounce(1)) {
+        sw_flag[1] = 1;
+    }
+    if (gpio == SW_3 && !is_debounce(2)) {
+        sw_flag[2] = 1;
+    }
 }
 
 int main() {
@@ -321,6 +409,11 @@ int main() {
     gpio_init(SW_3);
     gpio_pull_up(SW_3);
     gpio_set_dir(SW_3, false);
+
+    //Button interupt setup
+    gpio_set_irq_enabled_with_callback(SW_1, GPIO_IRQ_EDGE_FALL, true, &gpio_callback);
+    gpio_set_irq_enabled_with_callback(SW_2, GPIO_IRQ_EDGE_FALL, true, &gpio_callback);
+    gpio_set_irq_enabled_with_callback(SW_3, GPIO_IRQ_EDGE_FALL, true, &gpio_callback);
 
     // Initialize RS232
     uart_init(uart0, BAUD_RATE);
@@ -359,14 +452,11 @@ int main() {
     // Initialize the timer with the given period and enable interrupts
     add_repeating_timer_ms(-100, timer_callback, NULL, &timer);
 
-    // Set up interrupt for falling edge on button pin
-    //gpio_set_irq_enabled_with_callback(SW_1, GPIO_IRQ_EDGE_RISE, true, &button_callback);
-
     sleep_ms(300);//debug sleep
     target_enum();
 
     while(true){
-        gpio_put(LED_PIN, gpio_get(SW_1));
+        //gpio_put(LED_PIN, gpio_get(SW_1));
         gpio_put(TEST_LED_0, 1);
         if (buffer_count > 0) {
             process_uart_data(ring_buffer[read_index]);
