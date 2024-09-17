@@ -8,7 +8,7 @@ char ASCII_TO_SEG[95] = {
     0b00000000, // 36 $ unavailable
     0b00000000, // 37 % unavailable
     0b00000000, // 38 & unavailable
-    0b01000000, // 39 '
+    0b00100000, // 39 '
     0b00111001, // 40 (
     0b00001111, // 41 )
     0b00000000, // 42 * unavailable

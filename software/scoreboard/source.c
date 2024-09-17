@@ -43,6 +43,11 @@ volatile int piezo_trig_cnt = 0;
 volatile uint game_time = 0;
 volatile uint num_targets;
 volatile uint game_mode = 0;
+volatile uint next_mode = 1;
+const char *modes_lables[] = {"SETUP  ", "run 3  "};
+#define num_modes 2
+volatile uint timer_tic = 0;
+
 uint current_players = MAX_PLAYERS;
 
 uint8_t segments[10] = {
@@ -83,7 +88,7 @@ uint8_t boot_message[24] = {
     0b01111001, //E
     0b00000000  //space
     };
-char start_message[] = "COOPEr'S SUPER bULLSEyE";  
+char start_message[] = "COOPEr'S SUPER bULLSEyE ";  
 
 absolute_time_t last_pressed_time[3] = {0};
 
@@ -134,35 +139,43 @@ void ss_time_write(int num){
     spi_write_blocking(SS_SPI, &data_to_send[0], 4);
 }
 
-void ss_string_write(const char* input_str){
-    uint8_t data_to_send [4];
+void ss_string_write(const char* input_str, int shift) {
+    uint8_t data_to_send[4];
+    int length = strlen(input_str);
+
+    // If the string is 4 characters or less, no shift needed
+    if (length <= 4) {
+        // Copy the string directly into the display buffer
         for (int i = 0; i < 4; i++) {
-        if (input_str[i] != '\0') {  // Check if the string still has characters
-            data_to_send[i] = ASCII_TO_SEG[input_str[i] - 32];  // Convert character
-        } else {
-            data_to_send[i] = 0;  // Handle shorter strings by padding with 0
+            if (i < length) {
+                data_to_send[i] = ASCII_TO_SEG[input_str[i] - 32];  // Convert character
+            } else {
+                data_to_send[i] = 0;  // Pad with 0 if the string is shorter than 4 chars
+            }
+        }
+    } else {
+        // Handle scrolling if the string is longer than 4 characters
+        for (int i = 0; i < 4; i++) {
+            int index = (shift + i) % length;  // Wrap around when reaching the end of the string
+            data_to_send[i] = ASCII_TO_SEG[input_str[index] - 32];  // Convert character
         }
     }
-    spi_write_blocking(SS_SPI, &data_to_send[0], 4); 
+
+    // Send the data to the display
+    spi_write_blocking(SS_SPI, &data_to_send[0], 4);
 }
 
 bool timer_callback (struct repeating_timer *t) {
+    timer_tic++;
+    int shift = timer_tic>>2;
     gpio_put(SS_LAT, 0);
-    switch (game_mode)
-    {
+    switch (game_mode){
     case 0: //setup
-        // if (game_time != 0){
-        //     game_time--;
-        // }
-        // ss_time_write(game_time);
-        // for (size_t i = 0; i < MAX_PLAYERS; i++){
-        //     ss_int_write(score[i]);
-        // }
-        ss_string_write(&start_message[0]);
-        ss_string_write("PLyr");
+        ss_string_write(start_message, shift);
+        ss_string_write("PLyr", 0);
         ss_int_blank_write(current_players);
-        ss_string_write("TyPE");
-        ss_string_write("DAD ");
+        ss_string_write("TyPE", 0);
+        ss_string_write(modes_lables[next_mode], shift);
         break;
     case 1:
         if (game_time != 0){
@@ -170,7 +183,12 @@ bool timer_callback (struct repeating_timer *t) {
         }
         ss_time_write(game_time);
         for (size_t i = 0; i < MAX_PLAYERS; i++){
-            ss_int_write(score[i]);
+            if(i<current_players){
+                ss_int_write(score[i]);
+            }
+            else{
+                ss_int_blank_write(0);
+            }
         }
         break;
     default:
@@ -357,27 +375,38 @@ void setup_mode(){
         sw_flag[0] = 0;
         }
     if(sw_flag[1]){
-        game_time = 1800;
+        game_time = 1800; //probably should make an array for times.
+        if(next_mode == 0){
+            target_enum();
+        }
+        //Add light show to indicate start here
         for (size_t i = 0; i < num_targets; i++)
         {
-            target_on(1, i, rand()%4, (rand()%3)+2);
+            //target_on(1, i, rand()%4, (rand()%4)+2);
+            target_on(1, i, rand()%4, 5);
+            sleep_ms(500);
         }
-        
-        // target_on(1, 0, rand()%4, (rand()%3)+2);
-        // target_on(1, 1, rand()%4, (rand()%3)+2);
-        // target_on(1, 2, rand()%4, (rand()%3)+2);
-        // target_on(1, 3, rand()%4, (rand()%3)+2);
+        sleep_ms(1300);
         //printf("Button Press\n");
+        game_mode = next_mode;
         sw_flag[1] = 0;
     }
     if(sw_flag[2]){
+        next_mode = (next_mode + 1) % num_modes;
         sw_flag[2] = 0;
     }
     score[0]++;
     score[1]+=3;
     score[2]+=5;
     score[3]=num_targets;
-    sleep_ms(300);
+    //sleep_ms(300);
+}
+
+void timer_mode(){
+    if(game_time == 0){
+        sleep_ms(2000);
+        game_mode = 0;
+    }
 }
 
 void gpio_callback(uint gpio, uint32_t events){
@@ -471,7 +500,7 @@ int main() {
             break;
 
         case 1://Timer mode
-            /* code */
+            timer_mode();
             break;
         
         case 2://Quick mode
@@ -487,6 +516,7 @@ int main() {
             break;
 
         default:
+            game_mode = 0;
             break;
         }
     }
