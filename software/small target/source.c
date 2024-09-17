@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <math.h> //create rainbow header and take me out!
 
 #include "pico/stdlib.h"
 #include "pico/sem.h"
@@ -11,6 +10,7 @@
 #include "hardware/spi.h"
 #include "hardware/uart.h"
 #include "ws2812.pio.h"
+#include "rainbowtable.h"
 
 #define LED_PIN PICO_DEFAULT_LED_PIN
 #define TEST_LED_0 4
@@ -44,9 +44,6 @@
 #define PIEZO1 20
 #define PIEZO2 21
 
-#define RAINBOW_STEPS 1024
-#define M_PI 3.14159265358979323846  /* pi */
-
 bool update_flag = false;
 uint dma_chan[STRING_COUNT];
 uint32_t led_colors[STRING_COUNT][LED_COUNT] = {0};
@@ -57,7 +54,7 @@ uint32_t current_time[TARGETS_PER_STRING*STRING_COUNT] = {0};
 uint32_t preset_colors[16] = {PLAYER0_COLOR, PLAYER1_COLOR, PLAYER2_COLOR, PLAYER3_COLOR, 0, 0x88888800};
 uint8_t uart_channal;
 uint8_t program_numb =0;
-unsigned int rainbowtable[RAINBOW_STEPS];
+uint rainbowtable_size = sizeof(rainbowtable)/sizeof(rainbowtable[0]);
 
 volatile uint32_t time_click = 0;
 uint32_t fade[35] = {
@@ -79,38 +76,6 @@ uint32_t blam[35] = {
     0, 0, 0, 0, 0,
     0, 0, 0, 0, 0
 };
-
-unsigned int rainbowFade(int step, int count) {
-    // Calculate phase shift for red, green, and blue
-    double phaseShift = (step % count) * (2.0 * M_PI / count);
-    unsigned char red;
-    unsigned char green;
-    unsigned char blue;
-
-    if (phaseShift<(2*M_PI/3))
-    {
-        red = (unsigned char)(sin(phaseShift*(3.0/2.0) + M_PI/2.0) * 127 + 128);
-        green =  (unsigned char)(sin(phaseShift*(3.0/2.0) - M_PI/2.0) * 127 + 128);
-        blue = 0;
-    }
-    else if (phaseShift<(4*M_PI/3))
-    {
-        red = 0;
-        green = (unsigned char)(sin(phaseShift*(3.0/2.0) - M_PI/2.0) * 127 + 128);
-        blue = (unsigned char)(sin(phaseShift*(3.0/2.0) + M_PI/2.0) * 127 + 128);
-    }
-    else
-    {
-        red = (unsigned char)(sin(phaseShift*(3.0/2.0) + M_PI*1.5) * 127 + 128);
-        green = 0;
-        blue = (unsigned char)(sin(phaseShift*(3.0/2.0) + M_PI/2.0) * 127 + 128);
-    }
-    // Construct the 24-bit color value
-    unsigned int color = (blue << 16) | (red << 8) | green;
-
-
-    return color;
-}
 
 bool timer_callback (struct repeating_timer *t) {
     time_click++;
@@ -179,8 +144,7 @@ void pattern_off (uint32_t *data, uint32_t target_num){
 
 void pattern_rainbow (uint32_t *data, uint32_t target_num){
     for (int i = 0; i < LEDS_PER_TARGET; i++){
-        //data[i] = set_brightness(current_color[target_num], blam[current_time[target_num]]);
-        data[i] = set_brightness(rainbowtable[(current_time[target_num]+64*i) % RAINBOW_STEPS]<<8, fade[(current_time[target_num]+i) % LEDS_PER_TARGET]);   
+        data[i] = set_brightness(rainbowtable[(current_time[target_num]+16*i) % rainbowtable_size], fade[(current_time[target_num]+i) % LEDS_PER_TARGET]);   
     }
     (current_time[target_num] >= 3*LEDS_PER_TARGET) ? current_pat[target_num] = 0 : current_time[target_num]++;    
 }
@@ -330,12 +294,6 @@ int main() {
     gpio_init(PIEZO2);
     gpio_set_dir(PIEZO2, false);
     gpio_set_irq_enabled_with_callback(PIEZO1, GPIO_IRQ_EDGE_RISE, true, &gpio_callback);
-
-    // This should really be in hardcoded table!
-    for (uint i = 0; i < RAINBOW_STEPS; i++) //This can be pregenerated but this shows the math
-    {
-        rainbowtable[i]=rainbowFade(i, RAINBOW_STEPS);
-    }
 
     //Initalize UARTs
     uart_init(uart0, BAUD_RATE);

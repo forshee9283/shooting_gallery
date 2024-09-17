@@ -386,7 +386,7 @@ void setup_mode(){
             target_on(1, i, rand()%4, 5);
             sleep_ms(500);
         }
-        sleep_ms(1300);
+        sleep_ms(1750);
         //printf("Button Press\n");
         game_mode = next_mode;
         sw_flag[1] = 0;
