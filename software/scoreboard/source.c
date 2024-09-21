@@ -44,8 +44,8 @@ volatile uint game_time = 0;
 volatile uint num_targets;
 volatile uint game_mode = 0;
 volatile uint next_mode = 1;
-const char *modes_lables[] = {"SETUP  ", "run 3  "};
-#define num_modes 2
+const char *modes_lables[] = {"SETUP  ", "- lights out -", "run 3  "};
+#define num_modes 3
 volatile uint timer_tic = 0;
 
 uint current_players = MAX_PLAYERS;
@@ -409,6 +409,10 @@ void timer_mode(){
     }
 }
 
+void lights_out_mode(){
+    game_mode = 0;
+}
+
 void gpio_callback(uint gpio, uint32_t events){
     if (gpio == SW_1 && !is_debounce(0)) {
         sw_flag[0] = 1;
@@ -499,12 +503,12 @@ int main() {
             setup_mode();
             break;
 
-        case 1://Timer mode
-            timer_mode();
+        case 1://Lights Out
+            lights_out_mode();
             break;
         
-        case 2://Quick mode
-            /* code */
+        case 2://Timer mode
+            timer_mode();
             break;
         
         case 3://Blackout mode

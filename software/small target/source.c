@@ -13,15 +13,10 @@
 #include "rainbowtable.h"
 
 #define LED_PIN PICO_DEFAULT_LED_PIN
-#define TEST_LED_0 4
-#define TEST_LED_1 5
+#define TEST_LED_0 2
+#define TEST_LED_1 3
 
-#define SS_CLK 14
-#define SS_D 15
-#define SS_LAT 16
-#define SS_BLANK 17
-
-#define LED_0 10
+#define LED_0 6
 
 #define BAUD_RATE 31250 //MIDI standard data rate
 #define UART0_TX 0
@@ -41,8 +36,8 @@
 #define UART_MSG_SIZE 3
 #define BUFFER_CAPACITY 32
 
-#define PIEZO1 20
-#define PIEZO2 21
+#define PIEZO0 28
+#define PIEZO1 27
 
 bool update_flag = false;
 uint dma_chan[STRING_COUNT];
@@ -269,7 +264,7 @@ void process_uart_data(uint8_t *data) {
 }
 
 void gpio_callback(uint gpio, uint32_t events){
-    if(gpio == PIEZO1){
+    if(gpio == PIEZO0){
         if(current_pat[0]>1){
             target_hit(0,0,current_player[0],current_time[0]);
             printf("Target - Player Hit: %d\n", current_player[0]);
@@ -289,11 +284,11 @@ int main() {
     gpio_init(LED_PIN);
     gpio_set_dir(LED_PIN, true);
 
+    gpio_init(PIEZO0);
+    gpio_set_dir(PIEZO0, false);
     gpio_init(PIEZO1);
     gpio_set_dir(PIEZO1, false);
-    gpio_init(PIEZO2);
-    gpio_set_dir(PIEZO2, false);
-    gpio_set_irq_enabled_with_callback(PIEZO1, GPIO_IRQ_EDGE_RISE, true, &gpio_callback);
+    gpio_set_irq_enabled_with_callback(PIEZO0, GPIO_IRQ_EDGE_RISE, true, &gpio_callback);
 
     //Initalize UARTs
     uart_init(uart0, BAUD_RATE);
@@ -323,8 +318,8 @@ int main() {
     add_repeating_timer_ms(-20, timer_callback, NULL, &timer); //-20 for 50 fps  
 
     while(true){
-        gpio_put(TEST_LED_0, gpio_get(PIEZO1));
-        gpio_put(TEST_LED_1, gpio_get(PIEZO2));
+        gpio_put(TEST_LED_0, gpio_get(PIEZO0));
+        gpio_put(TEST_LED_1, gpio_get(PIEZO1));
         gpio_put(LED_PIN, 1);
         if (buffer_count > 0) {
             process_uart_data(ring_buffer[read_index]);
