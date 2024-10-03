@@ -22,10 +22,10 @@
 #define UART0_TX 0
 #define UART0_RX 1
 
-#define PLAYER0_COLOR 0xFF000000
-#define PLAYER1_COLOR 0x00FF0000
-#define PLAYER2_COLOR 0x0000FF00
-#define PLAYER3_COLOR 0x60900000
+#define PLAYER0_COLOR 0x0000FF00 //BLUE
+#define PLAYER1_COLOR 0xFF000000 //GREEN
+#define PLAYER2_COLOR 0x60900000 //YELLOW
+#define PLAYER3_COLOR 0x00FF0000 //RED
 
 #define LEDS_PER_TARGET 35
 #define TARGETS_PER_STRING 3
@@ -38,6 +38,15 @@
 
 #define PIEZO0 28
 #define PIEZO1 27
+#define PIEZO2 26
+#define PIEZO3 20
+#define PIEZO4 19
+#define PIEZO5 18
+#define PIEZO6 17
+#define PIEZO7 16
+#define PIEZO8 15
+#define PIEZO9 14
+uint8_t piezo[9] = {PIEZO0, PIEZO1, PIEZO2, PIEZO3, PIEZO4, PIEZO5, PIEZO6, PIEZO7, PIEZO8};
 
 bool update_flag = false;
 uint dma_chan[STRING_COUNT];
@@ -264,15 +273,34 @@ void process_uart_data(uint8_t *data) {
 }
 
 void gpio_callback(uint gpio, uint32_t events){
-    if(gpio == PIEZO0){
-        if(current_pat[0]>1){
-            target_hit(0,0,current_player[0],current_time[0]);
-            printf("Target - Player Hit: %d\n", current_player[0]);
-            current_time[0] = 0;
-            current_pat[0] = 1;
+    for (size_t i = 0; i < TARGETS_TOTAL; i++) {
+        if(gpio == piezo[i]){
+            if(current_pat[i]>1){
+                target_hit(0,i,current_player[i],current_time[i]);
+                printf("Target - Player Hit: %d\n", current_player[i]);
+                current_time[i] = 0;
+                current_pat[i] = 1;
+            }
         }
-        
     }
+    // if(gpio == PIEZO0){
+    //     if(current_pat[0]>1){
+    //         target_hit(0,0,current_player[0],current_time[0]);
+    //         printf("Target - Player Hit: %d\n", current_player[0]);
+    //         current_time[0] = 0;
+    //         current_pat[0] = 1;
+    //     }
+        
+    // }
+    //     if(gpio == PIEZO1){
+    //     if(current_pat[1]>1){
+    //         target_hit(0,1,current_player[1],current_time[1]);
+    //         printf("Target - Player Hit: %d\n", current_player[1]);
+    //         current_time[1] = 0;
+    //         current_pat[1] = 1;
+    //     }
+        
+    // }
 }
 
 int main() {
@@ -284,11 +312,19 @@ int main() {
     gpio_init(LED_PIN);
     gpio_set_dir(LED_PIN, true);
 
-    gpio_init(PIEZO0);
-    gpio_set_dir(PIEZO0, false);
-    gpio_init(PIEZO1);
-    gpio_set_dir(PIEZO1, false);
-    gpio_set_irq_enabled_with_callback(PIEZO0, GPIO_IRQ_EDGE_RISE, true, &gpio_callback);
+    //Setup all Piezo sensors with interupt
+    for (size_t i = 0; i < TARGETS_TOTAL; i++) { 
+        gpio_init(piezo[i]);
+        gpio_set_dir(piezo[i], false);
+        gpio_set_irq_enabled_with_callback(piezo[i], GPIO_IRQ_EDGE_RISE, true, &gpio_callback);
+    }
+    
+    // gpio_init(PIEZO0);
+    // gpio_set_dir(PIEZO0, false);
+    // gpio_init(PIEZO1);
+    // gpio_set_dir(PIEZO1, false);
+    // gpio_set_irq_enabled_with_callback(PIEZO0, GPIO_IRQ_EDGE_RISE, true, &gpio_callback);
+    // gpio_set_irq_enabled_with_callback(PIEZO1, GPIO_IRQ_EDGE_RISE, true, &gpio_callback);
 
     //Initalize UARTs
     uart_init(uart0, BAUD_RATE);

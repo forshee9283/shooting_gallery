@@ -14,7 +14,7 @@ char ASCII_TO_SEG[95] = {
     0b00000000, // 42 * unavailable
     0b00000000, // 43 + unavailable
     0b00001000, // 44 ,
-    0b00000001, // 45 -
+    0b01000000, // 45 -
     0b10000000, // 46 .
     0b00000000, // 47 / unavailable
     0b00111111, // 48 0
@@ -46,7 +46,7 @@ char ASCII_TO_SEG[95] = {
     0b00011110, // 74 J
     0b01110100, // 75 K (approximated)
     0b00111000, // 76 L
-    0b00000000, // 77 M unavailable
+    0b00100111, // 77 M unavailable
     0b01010100, // 78 N (approximated)
     0b00111111, // 79 O
     0b01110011, // 80 P
@@ -74,11 +74,11 @@ char ASCII_TO_SEG[95] = {
     0b01110001, //102 f
     0b01101111, //103 g
     0b01110100, //104 h
-    0b00000100, //105 i
-    0b00001100, //106 j
+    0b00000101, //105 i
+    0b00001101, //106 j
     0b01110100, //107 k (approximated)
     0b00110000, //108 l
-    0b01010101, //109 m (approximated)
+    0b01000100, //109 m (approximated place after n)
     0b01010100, //110 n
     0b01011100, //111 o
     0b01110011, //112 p
@@ -88,7 +88,7 @@ char ASCII_TO_SEG[95] = {
     0b01111000, //116 t
     0b00011100, //117 u
     0b00011100, //118 v (approximated)
-    0b00000000, //119 w unavailable
+    0b00001100, //119 w (approximated place after u)
     0b00000000, //120 x unavailable
     0b01101110, //121 y
     0b01011011, //122 z

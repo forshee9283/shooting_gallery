@@ -44,9 +44,12 @@ volatile uint game_time = 0;
 volatile uint num_targets;
 volatile uint game_mode = 0;
 volatile uint next_mode = 1;
-const char *modes_lables[] = {"SETUP  ", "- lights out -", "run 3  "};
+int current_target[128] = {0};
+const char *modes_lables[] = {"SETUP  ", "Lights Out  ", "run 3  "};
 #define num_modes 3
 volatile uint timer_tic = 0;
+bool setup_flag = 0;
+bool run_flag = 0;
 
 uint current_players = MAX_PLAYERS;
 
@@ -171,13 +174,38 @@ bool timer_callback (struct repeating_timer *t) {
     gpio_put(SS_LAT, 0);
     switch (game_mode){
     case 0: //setup
-        ss_string_write(start_message, shift);
-        ss_string_write("PLyr", 0);
-        ss_int_blank_write(current_players);
-        ss_string_write("TyPE", 0);
-        ss_string_write(modes_lables[next_mode], shift);
+        if (setup_flag) {
+            ss_string_write("by Cooper And dAd  ", shift);
+            ss_string_write("Trgt", 0);
+            ss_int_blank_write(num_targets);
+            ss_string_write("FrME", 0);
+            ss_int_blank_write(1);//update with number of frames
+        }
+        else {
+            ss_string_write(start_message, shift);
+            ss_string_write("PLyr", 0);
+            ss_int_blank_write(current_players);
+            ss_string_write("TyPE", 0);
+            ss_string_write(modes_lables[next_mode], shift);
+        }
+        
+
         break;
-    case 1:
+    case 1://Lights out
+        if (game_time < 1800){
+            game_time++;
+        }
+        ss_time_write(game_time);
+        for (size_t i = 0; i < MAX_PLAYERS; i++){
+            if(i<current_players){
+                ss_int_write(score[i]);
+            }
+            else{
+                ss_int_blank_write(0);
+            }
+        }
+        break;
+    case 2:
         if (game_time != 0){
             game_time--;
         }
@@ -330,6 +358,7 @@ void process_uart_data(uint8_t *data) {
     uint8_t command = data[0]>>4;
     uint8_t data1 = data[1];
     uint8_t data2 = data[2];
+    uint8_t player = data2>>5;
     //printf("MIDI Message: 0x%02X 0x%02X 0x%02X\n", data[0], data1, data2);
     switch (command)
     {
@@ -338,7 +367,12 @@ void process_uart_data(uint8_t *data) {
     case 0x09://Note on Hit Recived
         // current_color[data1] = preset_colors[data2>>4];
         // current_pat[data1] = data2&0x0F;
-        printf("RX on: Channel:%d Target:%d Player:%d Points:%d data2:0x%02X\n", data[0]&0xF, data1, data2>>5, data2&0x1F, data2);
+        if ((game_mode == 2) & run_flag) {
+            score[player] += 5;
+        }
+        
+        current_target[data1] = MAX_PLAYERS+1;
+        printf("RX on: Channel:%d Target:%d Player:%d Points:%d data2:0x%02X\n", data[0]&0xF, data1, player, data2&0x1F, data2);
         break;
     case 0x0A://Polyphonic Aftertouch
         /* code */
@@ -361,6 +395,18 @@ void process_uart_data(uint8_t *data) {
     }
 }
 
+void player_score_reset() {
+    for (size_t i = 0; i < MAX_PLAYERS; i++){
+        score[i] = 0;
+    }   
+}
+
+void target_reset() {
+    for (size_t i = 0; i < num_targets; i++) { //blank out targets
+        current_target[i] = MAX_PLAYERS+1;
+    }
+}
+
 void target_enum() { //hardcoded for uart0
     uart_putc(uart0, 0xB0);
     uart_putc(uart0, 0); 
@@ -368,26 +414,78 @@ void target_enum() { //hardcoded for uart0
     sleep_ms(300);//wait for responce
 }
 
+int count_occurrences(int *array, int size, int target) {
+    int count = 0;
+    for (int i = 0; i < size; i++) {
+        if (array[i] == target) {
+            count++;
+        }
+    }
+    return count;
+}
+
+void shuffle(int *array, int size) {
+    // Shuffle the array to randomize distribution
+    for (int i = size - 1; i > 0; i--) {
+        int j = rand() % (i + 1);
+        int temp = array[i];
+        array[i] = array[j];
+        array[j] = temp;
+    }
+}
+
+void target_check() {
+    for (size_t i = 0; i < num_targets; i++){
+            target_on(1, i, rand()%4, 5);
+            sleep_ms(300);
+        }
+        sleep_ms(2000);
+}
+
+bool check_array_not_equal(uint *array, int size, int num) {
+    for (int i = 0; i < size; i++) {
+        if (array[i] == num) {
+            return false;  // Found an element equal to num
+        }
+    }
+    return true;  // No element equals num
+}
+
+void pick_and_update(int *array, int size, int new_value) {
+    int start_index = rand() % size;  // Start from a random index
+    int current_index = start_index;
+
+    // Traverse the array, looping back if necessary, until all elements have been checked
+    do {
+        if (array[current_index] > MAX_PLAYERS) {
+            array[current_index] = new_value;
+            target_on(1, current_index, new_value, 3);
+            return;  // Value updated, exit the function
+        }
+        // Move to the next index, wrap around if at the end
+        current_index = (current_index + 1) % size;
+    } while (current_index != start_index);
+
+    // If the function reaches here, it means no value was found above MAX_PLAYERS
+    printf("No suitable entry found to update.\n");
+}
+
 void setup_mode(){
+    if (setup_flag){
+        target_enum();
+        target_check();
+        sleep_ms(4000);
+        setup_flag = 0;
+    }
+    
     if(sw_flag[0]){
-        game_time = 1800;
         current_players = (current_players % MAX_PLAYERS) +1;
         sw_flag[0] = 0;
         }
     if(sw_flag[1]){
-        game_time = 1800; //probably should make an array for times.
-        if(next_mode == 0){
-            target_enum();
-        }
-        //Add light show to indicate start here
-        for (size_t i = 0; i < num_targets; i++)
-        {
-            //target_on(1, i, rand()%4, (rand()%4)+2);
-            target_on(1, i, rand()%4, 5);
-            sleep_ms(500);
-        }
-        sleep_ms(1750);
-        //printf("Button Press\n");
+        target_check();
+        setup_flag = 1;
+        run_flag = 0;
         game_mode = next_mode;
         sw_flag[1] = 0;
     }
@@ -395,22 +493,103 @@ void setup_mode(){
         next_mode = (next_mode + 1) % num_modes;
         sw_flag[2] = 0;
     }
-    score[0]++;
-    score[1]+=3;
-    score[2]+=5;
-    score[3]=num_targets;
-    //sleep_ms(300);
 }
 
 void timer_mode(){
-    if(game_time == 0){
-        sleep_ms(2000);
+    static int density;
+//setup
+    if (setup_flag){
+        player_score_reset();
+        target_reset();
+        density = num_targets / (current_players * 8);//set to have a low probability of adjacent targets
+        density = (density == 0) ? 1 : density; //set minimum to 1
+        for (size_t i = 0; i < num_targets / 8 + current_players; i++) { //Fill in targets
+            current_target[i] = i%current_players;
+        }
+        shuffle(current_target, num_targets);
+        for (size_t i = 0; i < num_targets; i++){
+            if (current_target[i]<MAX_PLAYERS) {
+                target_on(1, i, current_target[i], 3);
+            }
+        }
+        game_time = 1800;
+        setup_flag = 0;
+        run_flag = 1;
+    }
+//run time    
+    if(run_flag){
+        for (size_t i = 0; i < current_players; i++)
+        {
+            if (count_occurrences(current_target, num_targets,i) < density) {
+                pick_and_update(current_target, num_targets, i);
+            }
+            
+        }    
+        if (game_time == 0){
+            run_flag = 0;
+        } 
+    }
+//
+//Button handling
+    if(sw_flag[0]){
+        sw_flag[0] = 0;
+    }
+    if(sw_flag[1]){
         game_mode = 0;
+        sw_flag[1] = 0;
+    }
+    if(sw_flag[2]){
+        sw_flag[2] = 0;
     }
 }
 
 void lights_out_mode(){
-    game_mode = 0;
+    static bool done_flag[MAX_PLAYERS]={0};
+    static bool last_done_flag[MAX_PLAYERS]={0};
+//Setup
+    if (setup_flag){
+        player_score_reset();
+        target_reset();
+        for (size_t i = 0; i < num_targets-(num_targets%current_players); i++) { //Fill in targets
+            current_target[i] = i%current_players;
+        }
+        shuffle(current_target, num_targets);
+        for (size_t i = 0; i < num_targets; i++){
+            if (current_target[i]<MAX_PLAYERS) {
+                target_on(1, i, current_target[i], 3);
+            }
+        }
+        game_time = 0;
+        setup_flag = 0;
+        run_flag = 1;
+    }
+//run time
+    if (run_flag){
+        for (size_t i = 0; i < current_players; i++){
+            done_flag[i]= check_array_not_equal(current_target,num_targets, i);
+            if (done_flag[i] && !last_done_flag[i]) { //chek if rising edge
+                score[i] = 2000 - (game_time*5);//This is sloppy find a better method that wont undershot and scales with targets!
+                last_done_flag[i]=1;
+            }
+        }
+        //if all done set run low
+    }
+//Button handling
+    if(sw_flag[0]){
+        sw_flag[0] = 0;
+    }
+    if(sw_flag[1]){
+        for (size_t i = 0; i < MAX_PLAYERS; i++) {
+            done_flag[i]=0;
+            last_done_flag[i]=0;
+        }
+        
+        game_mode = 0;
+        sw_flag[1] = 0;
+    }
+    if(sw_flag[2]){
+        sw_flag[2] = 0;
+    }
 }
 
 void gpio_callback(uint gpio, uint32_t events){
@@ -480,7 +659,6 @@ int main() {
     struct repeating_timer timer;
 
     gpio_put(SS_BLANK, 0);
-    //boot_text();//display boot message UCOMMENT ME LATER
     
     // Initialize the timer with the given period and enable interrupts
     add_repeating_timer_ms(-100, timer_callback, NULL, &timer);
@@ -511,7 +689,7 @@ int main() {
             timer_mode();
             break;
         
-        case 3://Blackout mode
+        case 3://Memory
             /* code */
             break;
         
