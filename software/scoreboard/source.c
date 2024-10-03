@@ -35,7 +35,8 @@
 
 #define MAX_PLAYERS 4 //Set for number of player scoreboards in the chain
 #define DISPLAY_UNITS MAX_PLAYERS + 1 //Total number of displays with clock
-volatile int score[MAX_PLAYERS] = {0};
+int score[MAX_PLAYERS] = {0};
+bool winning_score[MAX_PLAYERS] = {0};
 
 volatile bool sw_flag[3] = {0};
 volatile int led_on_timer = 0;
@@ -105,12 +106,20 @@ bool is_debounce(uint sw_index) { //Hardware debounce was nessisary in testing
     return false;  // Process this event
 }
 
-void ss_int_write(int num){
+void ss_int_write(int num, bool blink, uint tic){
     uint8_t data_to_send [4];
-    data_to_send [3] = segments[num % 10];
-    data_to_send [2] = segments[(num /10) % 10];
-    data_to_send [1] = segments[(num /100) % 10];
-    data_to_send [0] = segments[(num /1000) % 10];
+    if (blink & (tic&1)) {
+        data_to_send [3] = 0;
+        data_to_send [2] = 0;
+        data_to_send [1] = 0;
+        data_to_send [0] = 0;
+    }
+    else {
+        data_to_send [3] = segments[num % 10];
+        data_to_send [2] = segments[(num /10) % 10];
+        data_to_send [1] = segments[(num /100) % 10];
+        data_to_send [0] = segments[(num /1000) % 10];
+    }
     spi_write_blocking(SS_SPI, &data_to_send[0], 4);
 }
 
@@ -192,13 +201,13 @@ bool timer_callback (struct repeating_timer *t) {
 
         break;
     case 1://Lights out
-        if (game_time < 1800){
+        if ((game_time < 1800) & run_flag){
             game_time++;
         }
         ss_time_write(game_time);
         for (size_t i = 0; i < MAX_PLAYERS; i++){
             if(i<current_players){
-                ss_int_write(score[i]);
+                ss_int_write(score[i], winning_score[i], shift);
             }
             else{
                 ss_int_blank_write(0);
@@ -212,7 +221,7 @@ bool timer_callback (struct repeating_timer *t) {
         ss_time_write(game_time);
         for (size_t i = 0; i < MAX_PLAYERS; i++){
             if(i<current_players){
-                ss_int_write(score[i]);
+                ss_int_write(score[i], winning_score[i], shift);
             }
             else{
                 ss_int_blank_write(0);
@@ -398,6 +407,7 @@ void process_uart_data(uint8_t *data) {
 void player_score_reset() {
     for (size_t i = 0; i < MAX_PLAYERS; i++){
         score[i] = 0;
+        winning_score[i] = 0;
     }   
 }
 
@@ -422,6 +432,28 @@ int count_occurrences(int *array, int size, int target) {
         }
     }
     return count;
+}
+
+void set_winners(int *array, int size, bool *bool_array) {
+    // Initialize the bool array to 0
+    for (int i = 0; i < size; i++) {
+        bool_array[i] = 0;
+    }
+
+    // Find the highest value in the array
+    int max_value = array[0];
+    for (int i = 1; i < size; i++) {
+        if (array[i] > max_value) {
+            max_value = array[i];
+        }
+    }
+
+    // Mark the positions with the highest value in the bool array
+    for (int i = 0; i < size; i++) {
+        if (array[i] == max_value) {
+            bool_array[i] = 1;
+        }
+    }
 }
 
 void shuffle(int *array, int size) {
@@ -483,8 +515,9 @@ void setup_mode(){
         sw_flag[0] = 0;
         }
     if(sw_flag[1]){
-        target_check();
         setup_flag = 1;
+        player_score_reset();
+        target_check();
         run_flag = 0;
         game_mode = next_mode;
         sw_flag[1] = 0;
@@ -499,7 +532,6 @@ void timer_mode(){
     static int density;
 //setup
     if (setup_flag){
-        player_score_reset();
         target_reset();
         density = num_targets / (current_players * 8);//set to have a low probability of adjacent targets
         density = (density == 0) ? 1 : density; //set minimum to 1
@@ -527,6 +559,8 @@ void timer_mode(){
         }    
         if (game_time == 0){
             run_flag = 0;
+            set_winners(score, current_players, winning_score);
+            target_check();
         } 
     }
 //
@@ -548,7 +582,6 @@ void lights_out_mode(){
     static bool last_done_flag[MAX_PLAYERS]={0};
 //Setup
     if (setup_flag){
-        player_score_reset();
         target_reset();
         for (size_t i = 0; i < num_targets-(num_targets%current_players); i++) { //Fill in targets
             current_target[i] = i%current_players;
@@ -572,7 +605,10 @@ void lights_out_mode(){
                 last_done_flag[i]=1;
             }
         }
-        //if all done set run low
+        if(check_array_not_equal(score, current_players, 0)){
+            set_winners(score, current_players, winning_score);
+            run_flag = 0;
+        }
     }
 //Button handling
     if(sw_flag[0]){
